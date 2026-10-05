@@ -1,0 +1,23 @@
+__pycache__/
+*.py[cod]
+*.so
+*.o
+
+appimage-build/
+squashfs-root/
+appimagetool-x86_64.AppImage
+
+*.AppImage
+*.dmg
+*.exe
+
+.venv/
+venv/
+env/
+*.log
+
+# Local blockchain/header data
+electrumsv/electrumsv/resources/headersloaded/
+
+# Test wallet/database data
+electrumsv/electrumsv/tests/data/wallets/

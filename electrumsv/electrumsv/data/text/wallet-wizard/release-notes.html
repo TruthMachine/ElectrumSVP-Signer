@@ -1,0 +1,54 @@
+<html>
+    <body>
+        <p style="color:#d17a00; font-weight:bold;">
+            <b>ElectrumSVP 0.2.0:</b> Official release.
+        </p>
+
+        <p>
+            This release includes improvements to security, verification,
+            transaction control, reliability, platform compatibility, and
+            usability.
+        </p>
+
+        <p>
+            For the full release overview, please refer to the
+            <a href="https://electrumsv.io/articles/2026/electrumsvp-0_2_0.html" target="_blank">
+                official release article
+            </a>.
+        </p>
+
+        <ul>
+            <li><b>Header security & reliability:</b> Improved header integrity checks, synchronization reliability, and recovery tools, including a new Refresh Headers option.</li>
+
+            <li><b>BREAD verification:</b> Faster verification using locally stored proof data, with improved support for unconfirmed transactions and BREAD JSON export.</li>
+
+            <li><b>BREAD export on Windows:</b> Fixed the BREAD export cache path so cached verification data is stored and accessed correctly on Windows.</li>
+
+            <li><b>Fee system improvements:</b> Overhauled fee handling and display with greater control, transparency, and additional fee safeguards.</li>
+
+            <li><b>UTXO & coin control:</b> Overhauled coin splitting and UTXO management with improved coin selection and fee control.</li>
+
+            <li><b>Account & key management:</b> Improved multiple-account support, duplicate-key protection, imported private-key account handling, and custom derivation path display.</li>
+
+            <li><b>Address freezing:</b> Improved freeze/unfreeze controls and clearer visual indicators in the Destinations tab.</li>
+
+            <li><b>Themes:</b> Added Light, Dark, Pink, and Orange themes through Preferences.</li>
+
+            <li><b>USD conversion:</b> Improved fiat conversion with additional providers including Banana Blocks and Whatsonchain.</li>
+
+            <li><b>Security fixes:</b> Fixed a nonce issue affecting sweep signing and added various transaction and verification safeguards.</li>
+
+            <li><b>Seed storage security:</b> Fixed a security issue that could cause BIP39 mnemonic seed words to be stored in plaintext in wallet metadata. Existing affected wallets are migrated to remove the plaintext seed data.</li>
+
+            <li><b>Platform compatibility:</b> Fixed several Python 3.10 compatibility issues and Linux segmentation faults affecting recent Ubuntu and Arch-based environments.</li>
+
+            <li><b>Bug fixes & UI:</b> Fixed Windows QR scanning and macOS wallet data-path issues, along with numerous smaller interface and reliability improvements.</li>
+        </ul>
+
+        <p>
+            This is an official release. Please report crashes, verification
+            problems, transaction issues, or other unexpected behavior with as
+            much detail as possible.
+        </p>
+    </body>
+</html>
