@@ -291,9 +291,25 @@ class SignerWindow(QWidget):
         device_combo = QComboBox()
 
         for device in devices:
+            model = device.get("model") or "Unknown model"
+            vendor = device.get("vendor") or ""
+            serial = device.get("serial") or ""
+
+            if vendor:
+                model_info = f"{vendor} {model}"
+            else:
+                model_info = model
+
+            if serial:
+                serial_info = f" — SN: {serial}"
+            else:
+                serial_info = ""
+
             device_combo.addItem(
-                f"{device['name']} — {device['size']} "
-                f"({device['path']})",
+                f"{device['path']} — "
+                f"{model_info} — "
+                f"{device['size']}"
+                f"{serial_info}",
                 device["path"],
             )
 
@@ -605,11 +621,15 @@ class SignerWindow(QWidget):
 
         device_info = QLabel(
             f"<b>Device:</b> {device['path']}<br>"
-            f"<b>Size:</b> {device['size']}<br>"
-            f"<b>Transport:</b> USB<br>"
-            f"<b>Storage name:</b> {storage_name}"
+            f"<b>Model:</b> {device.get('model') or 'Unknown'}<br>"
+            f"<b>Vendor:</b> {device.get('vendor') or 'Unknown'}<br>"
+            f"<b>Size:</b> {device.get('size') or 'Unknown'}<br>"
+            f"<b>Serial:</b> {device.get('serial') or 'Not available'}<br>"
+            f"<b>Transport:</b> "
+            f"{(device.get('transport') or 'Unknown').upper()}"
         )
         device_info.setWordWrap(True)
+
 
         explanation = QLabel(
             "The USB device will be initialized as LUKS-encrypted "
@@ -722,10 +742,15 @@ class SignerWindow(QWidget):
 
         device_info = QLabel(
             f"<b>Device:</b> {device['path']}<br>"
-            f"<b>Size:</b> {device['size']}<br>"
-            f"<b>Transport:</b> USB"
+            f"<b>Model:</b> {device.get('model') or 'Unknown'}<br>"
+            f"<b>Vendor:</b> {device.get('vendor') or 'Unknown'}<br>"
+            f"<b>Size:</b> {device.get('size') or 'Unknown'}<br>"
+            f"<b>Serial:</b> {device.get('serial') or 'Not available'}<br>"
+            f"<b>Transport:</b> "
+            f"{(device.get('transport') or 'Unknown').upper()}"
         )
         device_info.setWordWrap(True)
+
 
         explanation = QLabel(
             "The device will eventually be initialized as a "
@@ -811,10 +836,9 @@ class SignerWindow(QWidget):
             )
             return
 
-        self.show_error(
+        self.show_success(
             "Wallet storage was initialized successfully."
         )
-
 
 
 
@@ -4384,19 +4408,49 @@ class SignerWindow(QWidget):
         self.layout.addWidget(home)
 
     # ------------------------------------------------------------------
-    # Error handling
+    # Success and error handling
     # ------------------------------------------------------------------
+
+    def show_success(self, message):
+        self.clear_layout()
+        self.resize(500, 500)
+
+        title = QLabel("Success")
+        title.setStyleSheet(
+            "font-size: 22px; font-weight: bold;"
+        )
+
+        success = QLabel(message)
+        success.setWordWrap(True)
+
+        back = QPushButton("Continue")
+        back.setMinimumHeight(42)
+        back.clicked.connect(self.show_home)
+
+        self.layout.addStretch()
+        self.layout.addWidget(title)
+        self.layout.addSpacing(15)
+        self.layout.addWidget(success)
+        self.layout.addSpacing(25)
+        self.layout.addWidget(back)
+        self.layout.addStretch()
 
     def show_error(self, message):
         self.clear_layout()
         self.resize(500, 500)
+
         title = QLabel("Error")
-        title.setStyleSheet("font-size: 22px; font-weight: bold;")
+        title.setStyleSheet(
+            "font-size: 22px; font-weight: bold;"
+        )
+
         error = QLabel(message)
         error.setWordWrap(True)
+
         back = QPushButton("Back")
         back.setMinimumHeight(42)
         back.clicked.connect(self.show_home)
+
         self.layout.addStretch()
         self.layout.addWidget(title)
         self.layout.addSpacing(15)
