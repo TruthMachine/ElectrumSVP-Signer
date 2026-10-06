@@ -4,12 +4,14 @@ import os
 import sys
 import hashlib
 
+import tempfile
+
 from signer.version import __version__
 
 import qrcode
 
 from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QFont, QPixmap, QIcon
+from PyQt5.QtGui import QFont, QPixmap, QIcon, QImage
 from PyQt5.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -1441,14 +1443,6 @@ class SignerWindow(QWidget):
             None,
         )
 
-        print()
-        print("GUI DERIVATION DIAGNOSTICS")
-        print("--------------------------")
-        print(
-            f"Mnemonic word count: "
-            f"{len(mnemonic.split())}"
-        )
-
         master_key = BIP32PrivateKey.from_seed(
             seed,
             Net.COIN,
@@ -1991,6 +1985,7 @@ class SignerWindow(QWidget):
 
 
     def show_signer_ready(self, mnemonic):
+
         self.clear_layout()
         self.resize(600, 620)
 
@@ -2193,12 +2188,12 @@ class SignerWindow(QWidget):
         )
 
         export_combo.addItem(
-            "View Master Public Key",
+            "View Master Extended Public Key",
             "public",
         )
 
         export_combo.addItem(
-            "Reveal Master Private Key",
+            "Reveal Master Account Private Key",
             "private",
         )
 
@@ -2933,14 +2928,14 @@ class SignerWindow(QWidget):
         )
 
         export_message = QLabel(
-            "The master public key can be exported to create a watch-only wallet. "
+            "The master extended public key can be exported to create a watch-only wallet. "
             "The master private key is highly sensitive."
         )
         export_message.setWordWrap(True)
         export_message.setStyleSheet("font-size: 11px;")
 
         public_button = QPushButton(
-            "View Master Public Key"
+            "View Master Extended Public Key"
         )
         public_button.setMinimumHeight(40)
 
@@ -3426,14 +3421,14 @@ class SignerWindow(QWidget):
         self.clear_layout()
         self.resize(600, 600)
 
-        title = QLabel("Master Public Key")
+        title = QLabel("Master Extended Public Key")
         title.setStyleSheet("font-size: 22px; font-weight: bold;")
 
         warning = QLabel(
-            "The master public key cannot be used by itself to spend funds.\n\n"
+            "The master extended public key cannot be used by itself to spend funds.\n\n"
             "However, anyone who obtains it can derive the wallet's public keys "
             "and addresses and monitor the wallet's activity.\n\n"
-            "The master public key also covers the wallet's entire public "
+            "The master extended public key also covers the wallet's entire public "
             "derivation tree. Only export it when you understand this exposure.\n\n"
             "For a watch-only wallet, consider whether an account-level public "
             "key is sufficient for your intended use."
@@ -3443,7 +3438,7 @@ class SignerWindow(QWidget):
             "font-size: 13px; font-weight: bold;"
         )
 
-        continue_button = QPushButton("Show Master Public Key")
+        continue_button = QPushButton("Show Master Extended Public Key")
         continue_button.setMinimumHeight(42)
         continue_button.clicked.connect(
             lambda: self.show_master_public_key(
@@ -3468,21 +3463,29 @@ class SignerWindow(QWidget):
 
     def show_master_public_key(self, mnemonic, return_callback):
         try:
-            xpub = self.key_to_xpub(self.derive_master_key(mnemonic))
+            master_key = self.derive_master_key(mnemonic)
+
+            account_key = self.derive_key_from_path(
+                master_key,
+                DEFAULT_ACCOUNT_DERIVATION,
+            )
+            xpub = self.key_to_xpub(account_key)
+
         except Exception as e:
             self.show_error(
-                f"Unable to derive the master public key:\n\n{e}"
+                f"Unable to derive the master extended public key:\n\n{e}"
             )
             return
 
         self.show_key_qr(
-            "Master Public Key",
+            "Master Extended Public Key",
             xpub,
             "This is the master extended public key.\n\n"
             "It can be exported to an online wallet to create a watch-only wallet.",
             False,
             return_callback,
         )
+
 
     def show_private_key_warning(self, mnemonic):
         self.clear_layout()
@@ -3495,7 +3498,7 @@ class SignerWindow(QWidget):
         )
         warning.setWordWrap(True)
         warning.setStyleSheet("font-size: 13px; font-weight: bold;")
-        reveal = QPushButton("Reveal Master Private Key")
+        reveal = QPushButton("Reveal Master Account Private Key")
         reveal.setMinimumHeight(42)
         reveal.clicked.connect(lambda: self.show_master_private_key(mnemonic))
         cancel = QPushButton("Cancel")
@@ -3512,18 +3515,27 @@ class SignerWindow(QWidget):
 
     def show_master_private_key(self, mnemonic):
         try:
-            xprv = self.key_to_xprv(self.derive_master_key(mnemonic))
+            master_key = self.derive_master_key(mnemonic)
+            account_key = self.derive_key_from_path(
+                master_key,
+                DEFAULT_ACCOUNT_DERIVATION,
+            )
+            xprv = self.key_to_xprv(account_key)
         except Exception as e:
-            self.show_error(f"Unable to derive the master private key:\n\n{e}")
+            self.show_error(
+                f"Unable to derive the master private key:\n\n{e}"
+            )
             return
+
         self.show_key_qr(
-            "Master Private Key",
+            "Master Account Private Key",
             xprv,
             "WARNING: Anyone with this key can derive the wallet's private keys and spend funds.\n\n"
             "Do not enter this key into an online device unless you fully understand the consequences.",
             True,
             lambda: self.show_signer_ready(mnemonic),
         )
+
 
     def show_key_qr(self, title, key_text, description, sensitive, return_callback):
         self.clear_layout()
@@ -3551,18 +3563,29 @@ class SignerWindow(QWidget):
         qr.add_data(key_text)
         qr.make(fit=True)
 
-        qr_path = "signer/key_export.png"
-        qr.make_image().convert("RGB").save(qr_path)
+
+        qr_image = qr.make_image().convert("RGB")
+
+        image_data = qr_image.tobytes("raw", "RGB")
+        qimage = QImage(
+            image_data,
+            qr_image.width,
+            qr_image.height,
+            qr_image.width * 3,
+            QImage.Format_RGB888,
+        ).copy()
 
         qr_label = QLabel()
         qr_label.setPixmap(
-            QPixmap(qr_path).scaled(
-                420,
-                420,
+            QPixmap.fromImage(qimage).scaled(
+                330,
+                330,
                 Qt.KeepAspectRatio,
                 Qt.SmoothTransformation,
             )
         )
+
+
         qr_label.setAlignment(Qt.AlignCenter)
 
         copy = QPushButton("Copy Key")
@@ -3583,7 +3606,7 @@ class SignerWindow(QWidget):
 
             self.save_text_to_file(
                 key_text,
-                "Save Master Public Key",
+                "Save Master Extended Public Key",
                 "electrumsvp-master-xpub.txt",
             )
 
@@ -3652,7 +3675,7 @@ class SignerWindow(QWidget):
         qr.add_data(text)
         qr.make(fit=True)
 
-        qr_path = "signer/text_export.png"
+        qr_path = os.path.join(tempfile.gettempdir(), "ElectrumSVP_text_export.png")
         qr.make_image().convert("RGB").save(qr_path)
 
         qr_label = QLabel()
@@ -3743,7 +3766,7 @@ class SignerWindow(QWidget):
                     f.write(key_text)
             except Exception as e:
                 self.show_error(
-                    f"Unable to save the master private key:\n\n{e}"
+                    f"Unable to save the master account private key:\n\n{e}"
                 )
                 return
 
@@ -3957,11 +3980,6 @@ class SignerWindow(QWidget):
         self.resize(650, 800)
         title = QLabel("Review Transaction")
         title.setStyleSheet("font-size: 22px; font-weight: bold;")
-        print()
-        print("TRANSACTION INPUT VALUES:")
-        for i, txin in enumerate(tx.inputs):
-            print(f"  Input {i}: value={txin.value!r}")
-        print()
 
         total_input = sum(txin.value for txin in tx.inputs)
 
@@ -4317,7 +4335,7 @@ class SignerWindow(QWidget):
             qr.add_data(frame_data)
             qr.make(fit=True)
 
-            qr_path = "signer/signing_response.png"
+            qr_path = os.path.join(tempfile.gettempdir(), "ElectrumSVP_signing_response.png")
 
             qr.make_image().convert("RGB").save(qr_path)
 

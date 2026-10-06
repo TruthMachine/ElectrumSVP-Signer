@@ -3038,7 +3038,7 @@ class Wallet(TriggeredCallbacks):
         proof = TxProof(proof_position, proof_branch)
         self._transaction_cache.update_proof(tx_hash, proof)
 
-        # build BEEF immediately after the proof is stored.
+        # Build BEEF immediately after the proof is stored.
         try:
             from electrumsv import verification_utils
 
@@ -3048,34 +3048,24 @@ class Wallet(TriggeredCallbacks):
                     if tx is None:
                         continue
 
-                    print(
-                        "BEEF TEST: proof stored, building BEEF for",
-                        hash_to_hex_str(tx_hash),
-                    )
-
-                    beef_data = verification_utils.build_beef(
+                    verification_utils.build_beef(
                         tx,
                         account=account,
                         slim=False,
                     )
 
-                    print(
-                        "BEEF TEST: built successfully:",
-                        hash_to_hex_str(tx_hash),
-                    )
-
                     break
 
-                except Exception as e:
-                    print(
-                        "BEEF TEST: account failed:",
-                        repr(e),
+                except Exception:
+                    self._logger.exception(
+                        "Failed to build BEEF for account %d",
+                        account.get_id(),
                     )
 
-        except Exception as e:
-            print(
-                "BEEF TEST: automatic BEEF build failed:",
-                repr(e),
+        except Exception:
+            self._logger.exception(
+                "Automatic BEEF build failed for %s",
+                tx_id,
             )
 
         height, conf, _timestamp = self.get_tx_height(tx_hash)

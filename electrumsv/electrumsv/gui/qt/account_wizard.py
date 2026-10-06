@@ -38,7 +38,7 @@ from PyQt5.QtGui import QBrush, QColor, QPainter, QPalette, QPen, QPixmap, QText
 from PyQt5.QtWidgets import (
     QCheckBox, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
     QListWidget, QListWidgetItem, QProgressBar, QRadioButton, QSizePolicy, QSlider, QTextEdit,
-    QVBoxLayout, QWidget, QWizard, QWizardPage
+    QVBoxLayout, QWidget, QWizard, QWizardPage, QPushButton
 )
 
 from electrumsv.app_state import app_state
@@ -61,6 +61,7 @@ from .util import (ChoicesLayout, icon_path, MessageBox, MessageBoxMixin, protec
     read_QIcon)
 from .wizard_common import BaseWizard, DEFAULT_WIZARD_FLAGS, WizardFlags, WizardFormSection
 from .theme import account_types_style, Theme, theme_from_config
+from .qrtextedit import ScanQRTextEdit
 
 
 logger = logs.get_logger('wizard-account')
@@ -107,6 +108,7 @@ class AccountPage(enum.IntEnum):
     IMPORT_ACCOUNT_FILE = 400
     IMPORT_ACCOUNT_TEXT = 405
     IMPORT_ACCOUNT_TEXT_CUSTOM = 410
+    WATCH_ONLY_ACCOUNT = 415
     
     #Remove HW support
     #FIND_HARDWARE_WALLET = 500
@@ -181,6 +183,7 @@ class AccountWizard(BaseWizard, MessageBoxMixin):
         self.setPage(AccountPage.ADD_ACCOUNT_MENU, AddAccountWizardPage(self))
         self.setPage(AccountPage.IMPORT_ACCOUNT_TEXT, ImportWalletTextPage(self))
         self.setPage(AccountPage.IMPORT_ACCOUNT_TEXT_CUSTOM, ImportWalletTextCustomPage(self))
+        self.setPage(AccountPage.WATCH_ONLY_ACCOUNT, WatchOnlyAccountPage(self))
         self.setPage(AccountPage.CREATE_MULTISIG_ACCOUNT, CreateMultisigAccountPage(self))
         self.setPage(AccountPage.CREATE_MULTISIG_ACCOUNT_CUSTOM,
             CreateMultisigAccountCustomPage(self))
@@ -232,9 +235,20 @@ class AccountWizard(BaseWizard, MessageBoxMixin):
         return self._keystore
 
     def set_keystore_result(self, result_type: ResultType, keystore: Optional[KeyStore]) -> bool:
+        print("DEBUG SET KEYSTORE RESULT TYPE:", type(keystore).__name__ if keystore else None)
+        if keystore is not None:
+            print("DEBUG SET KEYSTORE RESULT DERIVATION:", keystore.derivation_type)
+            if hasattr(keystore, "get_cosigner_keystores"):
+                for i, cosigner in enumerate(keystore.get_cosigner_keystores()):
+                    print(
+                        "DEBUG SET MULTISIG COSIGNER", i + 1,
+                        "TYPE:", type(cosigner).__name__,
+                        "DERIVATION:", cosigner.derivation_type,
+                        "XPUB:", cosigner.get_master_public_key()
+                    )
+
         self._keystore_type = result_type
         self._keystore = keystore
-
         if keystore is None:
             return False
 
@@ -525,6 +539,19 @@ class AddAccountWizardPage(QWizardPage):
                 'enabled': True,
                 'mode_mask': WizardFlags.STANDARD_MODE,
             },
+
+            {
+                'page': AccountPage.WATCH_ONLY_ACCOUNT,
+                'description': _("Watch-only"),
+                'icon_filename': 'icons8-lock-80.png',
+                'long_description': _("Monitor an existing wallet without importing its "
+                    "private keys.") +"<br/><br/>"+ _("You will need the wallet's "
+                    "extended public key. A watch-only account can view addresses and "
+                    "transactions, but cannot spend coins."),
+                'enabled': True,
+                'mode_mask': WizardFlags.ALL_MODES,
+            },
+
             {
                 'page': AccountPage.IMPORT_ACCOUNT_FILE,
                 'description': _("Import from file"),
@@ -554,6 +581,120 @@ class AddAccountWizardPage(QWizardPage):
         ]
 
 
+
+class WatchOnlyAccountPage(QWizardPage):
+    def __init__(self, wizard: AccountWizard) -> None:
+        super().__init__(wizard)
+
+        self.setTitle(_("Watch-only account"))
+        self.setFinalPage(True)
+
+        self._label = QLabel(
+            _("Enter the wallet's extended public key. "
+              "This allows ElectrumSV to monitor the wallet without "
+              "having access to its private keys.")
+        )
+        self._label.setWordWrap(True)
+
+        self._key_edit = QLineEdit()
+        self._key_edit.setPlaceholderText(_("Extended public key"))
+        self._key_edit.textChanged.connect(self._on_key_changed)
+        self._qr_button = QPushButton(_("Scan QR"))
+        self._qr_button.clicked.connect(self._on_scan_qr)
+
+        self._status_label = QLabel()
+        self._status_label.setWordWrap(True)
+
+        layout = QVBoxLayout()
+        layout.addWidget(self._label)
+        layout.addSpacing(10)
+        layout.addWidget(self._key_edit)
+        layout.addWidget(self._qr_button)
+        layout.addWidget(self._status_label)
+        layout.addStretch(1)
+        self.setLayout(layout)
+
+
+    def _on_scan_qr(self) -> None:
+        scanner = ScanQRTextEdit()
+        data = scanner.qr_input()
+
+        if data:
+            self._key_edit.setText(data.strip())
+
+
+    def _on_key_changed(self, text: str) -> None:
+        text = text.strip()
+
+        if not text:
+            self._status_label.setText("")
+            self.completeChanged.emit()
+            return
+
+        try:
+            key = bip32_key_from_string(text)
+        except (Base58Error, ValueError):
+            self._status_label.setText(_("Invalid extended public key."))
+        else:
+            if isinstance(key, PrivateKey):
+                self._status_label.setText(
+                    _("Please enter an extended public key, not a private key.")
+                )
+            else:
+                self._status_label.setText(
+                    _("Valid extended public key.")
+                )
+
+        self.completeChanged.emit()
+
+    def isComplete(self) -> bool:
+        text = self._key_edit.text().strip()
+
+        if not text:
+            return False
+
+        try:
+            key = bip32_key_from_string(text)
+        except (Base58Error, ValueError):
+            return False
+
+        return not isinstance(key, PrivateKey)
+
+    def validatePage(self) -> bool:
+        text = self._key_edit.text().strip()
+
+        try:
+            key = bip32_key_from_string(text)
+        except (Base58Error, ValueError):
+            return False
+
+        if isinstance(key, PrivateKey):
+            return False
+
+        keystore = instantiate_keystore_from_text(
+            KeystoreTextType.EXTENDED_PUBLIC_KEY,
+            text,
+            None,
+        )
+
+        wizard: AccountWizard = self.wizard()
+        return wizard.set_keystore_result(ResultType.IMPORTED, keystore)
+
+    def nextId(self) -> int:
+        return -1
+
+    def on_enter(self) -> None:
+        self._key_edit.clear()
+        self._status_label.clear()
+        self.completeChanged.emit()
+
+    def on_leave(self) -> None:
+        pass
+
+
+
+
+
 class ImportWalletTextPage(QWizardPage):
     def __init__(self, wizard: AccountWizard) -> None:
         super().__init__(wizard)
@@ -570,6 +711,9 @@ class ImportWalletTextPage(QWizardPage):
         self.text_area.setAcceptRichText(False)
         self.text_area.setWordWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
         self.text_area.setTabChangesFocus(True)
+
+        self._qr_button = QPushButton(_("Scan QR"))
+        self._qr_button.clicked.connect(self._on_scan_qr)
 
         self._label = QLabel(_("Please enter some text and any valid matches will be "
             "made available below.."))
@@ -616,6 +760,7 @@ class ImportWalletTextPage(QWizardPage):
 
         layout = QVBoxLayout()
         layout.addWidget(self.text_area)
+        layout.addWidget(self._qr_button)
         layout.addLayout(hbox)
         layout.addLayout(hbox2)
 
@@ -670,6 +815,14 @@ class ImportWalletTextPage(QWizardPage):
             self._checked_match_type not in { KeystoreTextType.ADDRESSES,
                 KeystoreTextType.PRIVATE_KEYS, KeystoreTextType.ELECTRUM_OLD_SEED_WORDS })
         self.completeChanged.emit()
+
+    def _on_scan_qr(self) -> None:
+        scanner = ScanQRTextEdit()
+        data = scanner.qr_input()
+
+        if data:
+            self.text_area.setPlainText(data.strip())
+
 
     def _on_text_changed(self) -> None:
         matches: Dict[KeystoreTextType, KeystoreMatchType] = {}
@@ -795,8 +948,17 @@ class ImportWalletTextPage(QWizardPage):
                           "already present in this wallet."))
                 return False
         else:
-            _keystore = instantiate_keystore_from_text(self._checked_match_type,
-                self._matches[self._checked_match_type], password)
+            print("DEBUG ACTUAL IMPORT MATCH TYPE:", self._checked_match_type)
+            print("DEBUG ACTUAL IMPORT ENTRY TYPE:",
+                type(self._matches[self._checked_match_type]).__name__)
+
+            _keystore = instantiate_keystore_from_text(
+                self._checked_match_type,
+                self._matches[self._checked_match_type],
+                password)
+
+            print("DEBUG ACTUAL IMPORT RESULT TYPE:", type(_keystore).__name__)
+            print("DEBUG ACTUAL IMPORT DERIVATION:", _keystore.derivation_type)
             if not wizard.set_keystore_result(ResultType.IMPORTED, _keystore):
                 if main_window is not None:
                     main_window.show_error(
@@ -908,8 +1070,11 @@ class ImportWalletTextCustomPage(QWizardPage):
         watch_only = (self._watchonly_button.isChecked()
             if self._allow_watch_only_usage() else False)
 
+        print("DEBUG: import keystore type =", self._text_type)
+        print("DEBUG: derivation path =", derivation_text)
         _keystore = instantiate_keystore_from_text(self._text_type, self._text_matches,
             password, derivation_text, passphrase, watch_only)
+        print("DEBUG: imported keystore xpub =", _keystore.get_master_public_key())
         wizard: AccountWizard = self.wizard()
         return wizard.set_keystore_result(ResultType.IMPORTED, _keystore)
 
@@ -1340,32 +1505,39 @@ class SetupHardwareWalletAccountPage(QWizardPage):
     @protected
     def _create_account(self, main_window: Optional[ElectrumWindow]=None,
             password: Optional[str]=None) -> bool:
-        # The derivation path is valid, proceed to create the account.
         wizard: AccountWizard = self.wizard()
-        name, device_info = wizard.get_selected_device()
+        entries = self._matches[self._checked_match_type]
 
-        derivation_text = compose_chain_string(self._derivation_user)
-        try:
-            mpk = self._plugin.get_master_public_key(device_info.device.id_, derivation_text,
-                wizard)
-        except Exception as e:
-            logger.exception("Failed getting master public key for hardware wallet (%s, %s)",
-                self._derivation_user, derivation_text)
-            MessageBox.show_error(str(e))
-            return False
+        print("DEBUG MULTISIG IMPORT MATCH TYPE:", self._checked_match_type)
+        print("DEBUG MULTISIG IMPORT ENTRY TYPE:", type(entries).__name__)
 
-        label = device_info.label
-        data = {
-            'hw_type': name,
-            'derivation': derivation_text,
-            'xpub': mpk.to_extended_key_string(),
-            'label': label.strip() if label and label.strip() else None,
-        }
-        keystore = instantiate_keystore(DerivationType.HARDWARE, data)
-        wizard.set_keystore_result(ResultType.HARDWARE, keystore)
+        if self._checked_match_type in (KeystoreTextType.ADDRESSES, KeystoreTextType.PRIVATE_KEYS):
+            script_type = (ScriptType.P2PKH
+                if self._checked_match_type == KeystoreTextType.PRIVATE_KEYS else ScriptType.NONE)
+            if not wizard.set_text_entry_account_result(
+                    ResultType.IMPORTED, self._checked_match_type,
+                    script_type, entries, password):
+                if main_window is not None:
+                    main_window.show_error(
+                        _("Nothing was imported because all of the keys or addresses are "
+                          "already present in this wallet."))
+                return False
+        else:
+            _keystore = instantiate_keystore_from_text(
+                self._checked_match_type,
+                self._matches[self._checked_match_type],
+                password)
+
+            print("DEBUG MULTISIG IMPORT RESULT TYPE:", type(_keystore).__name__)
+            print("DEBUG MULTISIG IMPORT DERIVATION:", _keystore.derivation_type)
+
+            if not wizard.set_keystore_result(ResultType.IMPORTED, _keystore):
+                if main_window is not None:
+                    main_window.show_error(
+                        _("This account is already present in this wallet."))
+                return False
 
         return True
-
 
 class CosignWidget(QWidget):
     size = 200

@@ -458,7 +458,7 @@ HERE="$(dirname "$(readlink -f "$0")")"
 # Bundled native libraries
 # ------------------------------------------------------------
 
-export LD_LIBRARY_PATH="$HERE/usr/lib:$HERE/usr/lib/python3.9:$LD_LIBRARY_PATH"
+export LD_LIBRARY_PATH="$HERE/usr/lib:$HERE/usr/lib/python3.9:$HERE/usr/lib/python3.9/site-packages/pillow.libs:$LD_LIBRARY_PATH"
 
 
 # ------------------------------------------------------------
